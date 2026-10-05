@@ -1,0 +1,23 @@
+{
+ "service": "life-search-engine",
+ "run": "demo-1",
+ "tokens": {"owner": "maya-owner-demo", "reader": "maya-reader-demo"},
+ "steps": [
+  {"title": "Import three years of exports", "say": "An invented person's photo library, mailbox, calendar, scanned receipts, messages and contacts: 2,549 records from six apps that know nothing about each other. Indexing runs locally, with no outside service.",
+   "calls": [{"key": "imp", "as": "owner", "method": "POST", "path": "/v1/connectors/import", "body": {"source": "demo-archive"}}]},
+  {"title": "What the indexer worked out", "say": "From timestamps, GPS and receipt addresses alone it found the trips away from home, and inside them the separate moments: a dinner, an afternoon walking around.",
+   "calls": [{"key": "trips", "as": "reader", "method": "GET", "path": "/v1/timeline?level=trip&limit=20"}]},
+  {"title": "Ask a question that needs five hops", "say": "The answer is in no single record. The photo has no restaurant name, the receipt has no people, the calendar entry has no photo. The engine walks from the trip to the photo to the moment to the receipt to the people, and shows each step.",
+   "calls": [{"key": "ask", "as": "reader", "method": "POST", "path": "/v1/search", "body": {"query": "Find the Italian restaurant from my 2024 Chicago trip where I photographed a red motorcycle, then show the receipt and who I was with."}}]},
+  {"title": "Open the evidence", "say": "Every part of the answer links back to a source record. Here is the receipt as scanned, and everything the archive knows about the person who was there.",
+   "calls": [{"key": "receipt", "as": "reader", "method": "GET", "path": "/v1/artifacts/{{ask.answer.receipt.id}}"}, {"key": "person", "as": "reader", "method": "GET", "path": "/v1/entities/{{ask.answer.people.0.entity_id}}/graph"}]},
+  {"title": "Summarise the whole trip", "say": "A summary built only from records: each sentence lists what it was built from, and a sentence with nothing behind it is dropped.",
+   "calls": [{"key": "sum", "as": "reader", "method": "POST", "path": "/v1/memories/summarize", "body": {"event_id": "{{ask.answer.trip.id}}"}}]},
+  {"title": "Delete a record for good, then ask again", "say": "The owner purges the receipt. Its text, its search vector and every link derived from it are gone, and the same question now says so instead of inventing a total. A question about a trip that never happened is refused the same way.",
+   "calls": [{"key": "purge", "as": "owner", "method": "DELETE", "path": "/v1/artifacts/{{ask.answer.receipt.id}}?purge=true"},
+             {"key": "ask2", "as": "reader", "method": "POST", "path": "/v1/search", "body": {"query": "Find the Italian restaurant from my 2024 Chicago trip where I photographed a red motorcycle, then show the receipt and who I was with."}},
+             {"key": "ask3", "as": "reader", "method": "POST", "path": "/v1/search", "body": {"query": "Find the Thai restaurant from my 2019 Boston trip where I photographed a green boat."}}]},
+  {"title": "The audit trail", "say": "Imports and purges are recorded in a log that cannot be edited. The purge entry keeps the record's type and a fingerprint, never its content.",
+   "calls": [{"key": "audit", "as": "owner", "method": "GET", "path": "/v1/audit?limit=10"}]}
+ ]
+}

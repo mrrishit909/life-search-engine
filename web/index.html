@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Life Search Engine</title>
+<link rel="stylesheet" href="kit.css">
+<style>
+.answer { font-size:17px; line-height:1.5; margin:0 0 12px; } .q { color:var(--mute); font-style:italic; margin:0 0 10px; }
+ol.trace { margin:0; padding:0 0 0 20px; } ol.trace li { margin-bottom:9px; } ol.trace .f { color:var(--text); } ol.trace .none { color:var(--bad); }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Life Search Engine</h1>
+  <span class="sub">Three years of one invented person's photos, receipts, mail, calendar and messages. Can it answer a question no single record holds?</span>
+  <span class="mode">…</span>
+  <button class="primary" id="runall">Run all steps</button>
+</header>
+<main>
+  <nav class="steps"></nav>
+  <div><div id="steps"></div></div>
+</main>
+<footer>The person, their contacts and every record are generated. There are no image files: a "photo" is the time, GPS and tags an on-device tagger would produce. Nothing leaves the machine: no outside model or service is called.</footer>
+<script src="kit.js"></script>
+<script>
+const KIND = { photo: 'Photo', receipt: 'Receipt', email: 'E-mail', calendar: 'Calendar', message: 'Message', contact: 'Contact' };
+const day = s => new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const src = n => `<span class="badge info">${n} source${n === 1 ? '' : 's'}</span>`;
+const recs = rows => table([{ k: 'kind', label: 'Record', f: v => KIND[v] || v }, { k: 'captured_at', label: 'When', f: fmt.time }, { k: 'text', label: 'Content', f: v => `<span class="mono">${esc(v.split('\n')[0].slice(0, 60))}</span>` },
+  { k: 'similarity', label: 'Similarity', num: 1, f: v => v == null ? '' : fmt.n(v, 2) }], rows);
+function answer(s) {
+  const a = s.answer, q = `<p class="q">"${esc(s.query)}"</p>`;
+  const trace = `<ol class="trace">${a.trace.map(t => `<li><b>${esc(t.step)}</b> <span class="mute small">${esc(t.looked_for)}</span><br>${t.found.length ? t.found.map(f => `<span class="f">${esc(f)}</span>`).join('<br>') + ' ' + src(t.sources.length) : '<span class="none">nothing found</span>'}</li>`).join('')}</ol>`;
+  if (a.status !== 'answered') return card('', q + `<p class="answer">${badge('no answer', 'warn')} ${esc(a.reason[0].toUpperCase() + a.reason.slice(1))}.</p>` + trace);
+  return card('', q + `<p class="answer">${esc(a.sentence)}</p><div class="grid2"><div><h3>How it got there</h3>${trace}</div><div><h3>The evidence</h3>`
+    + (a.receipt ? `<pre class="doc" style="font-size:11.5px;background:#0e0e10;padding:10px;border-radius:8px">${esc(a.receipt.text)}</pre>` : `<div class="card" style="border-color:var(--warn)">${badge('missing', 'warn')} No receipt for this meal is in the archive.</div>`)
+    + `<div style="margin-top:8px">${a.photo ? badge('photo: ' + a.photo.tags.join(' · ')) + ' ' : ''}${a.people.map(p => badge(p.name, 'good')).join(' ')}</div><div class="small mute" style="margin-top:6px">${a.moment.records.length} records in this moment, ${a.sources.length} cited.</div></div></div>`)
+    + `<div class="grid2">${card('The same sentence given to plain vector search', recs(s.plain_vector_search))}${card('Hybrid search (meaning + words)', recs(s.results.slice(0, 5)))}</div>`;
+}
+const R = {
+  imp: j => { const s = j.result; return kpis([{ label: 'Records', value: fmt.n(s.records), sub: day(s.from) + ' to ' + day(s.to) }, { label: 'People', value: s.people, sub: 'from contact cards' }, { label: 'Restaurants', value: s.places, sub: 'recovered from receipts' },
+      { label: 'Trips found', value: s.trips }, { label: 'Moments', value: fmt.n(s.moments) }, { label: 'Links to people and places', value: fmt.n(s.mentions), sub: s.first_name_mentions_left_unresolved + ' left unlinked: ambiguous name' }])
+    + card('By kind', barChart(Object.entries(s.by_kind).sort((a, b) => b[1] - a[1]).map(([k, v], i) => ({ label: KIND[k], value: v, color: PALETTE[i % 6] }))))
+    + `<div class="small mute" style="margin:-4px 0 12px">Search vectors: ${esc(s.embedding)}.</div>`; },
+  trips: t => card(`${t.items.length} trips away from home`, table([{ k: 'place', label: 'City' }, { k: 'starts_at', label: 'From', f: day }, { k: 'ends_at', label: 'To', f: day }, { k: 'moments', label: 'Moments', num: 1 }, { k: 'records', label: 'Records', num: 1 },
+    { k: 'people', label: 'With', f: v => esc(v.join(', ')) }], t.items)),
+  ask: answer, ask2: answer, ask3: answer,
+  receipt: a => card(`Source record: ${a.uri}`, `<div class="grid2"><pre class="doc" style="font-size:11.5px">${esc(a.body)}</pre><div>${table([{ k: 'entity_type', label: 'Found in it' }, { k: 'canonical_name', label: 'Entity' }, { k: 'how', label: 'How' }, { k: 'confidence', label: 'Conf.', num: 1, f: v => fmt.n(v, 2) }], a.entities)}
+    <div class="small mute" style="margin-top:8px">Belongs to: ${a.events.map(e => esc(e.event_type + ' "' + e.summary + '"')).join(', ')}. Fingerprint <span class="mono">${a.checksum.slice(0, 12)}…</span></div></div></div>`),
+  person: p => card(p.entity.canonical_name, kpis([{ label: 'Moments together', value: p.moments }, { label: 'First seen', value: day(p.first_seen) }, { label: 'Last seen', value: day(p.last_seen) }])
+    + `<div class="grid2"><div>${table([{ k: 'canonical_name', label: 'Connected to' }, { k: 'entity_type', label: 'Type' }, { k: 'shared_moments', label: 'Shared moments', num: 1 }], p.connected_to.slice(0, 8))}</div>
+       <div>${table([{ k: 'how', label: 'How mentions were linked' }, { k: 'n', label: 'Mentions', num: 1 }, { k: 'confidence', label: 'Conf.', num: 1, f: v => fmt.n(v, 2) }], p.linked_by)}</div></div>`),
+  sum: s => card(`Summary of "${s.event.summary}" · ${s.method}`, s.sentences.map(x => `<p style="margin:0 0 8px">${esc(x.text)} ${src(x.sources.length)}</p>`).join('') + `<div class="small mute">${s.records} records in the trip; ${s.dropped_for_lack_of_sources} sentences dropped for having no source.</div>`),
+  purge: p => `<div class="card" style="border-color:var(--warn)">${badge('purged', 'warn')} The ${esc(p.kind)} is deleted. Rows derived from it still in the database: <b>${p.derived_rows_left}</b>. It will not come back on the next import.</div>`,
+  audit: a => card(`Audit log · hash chain ${a.chain_valid ? 'verifies' : 'BROKEN'}`, table([{ k: 'at', label: 'When', f: fmt.time }, { k: 'action', label: 'Action', f: v => `<span class="mono">${esc(v)}</span>` },
+    { k: 'detail', label: 'Detail', f: d => `<span class="small">${esc(Object.entries(d).filter(([, v]) => typeof v !== 'object').map(([k, v]) => `${k}: ${v}`).join(' · ').slice(0, 130))}</span>` }], a.events.slice().reverse())),
+};
+const demo = new Demo(R); demo.init();
+</script>
+</body>
+</html>
